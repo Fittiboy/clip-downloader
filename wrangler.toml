@@ -1,0 +1,13 @@
+name = "clip-downloader"
+main = "build/worker/shim.mjs"
+compatibility_date = "2023-03-22"
+
+route = { pattern = "clips.fitti.io", zone_id = "21a34530ef05899904cd180bb54eb3c4" , custom_domain = true }
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[env.production]
+routes = [
+	{ pattern = "clips.fitti.io/*", zone_name = "fitti.io" }
+]

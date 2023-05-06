@@ -1,0 +1,19 @@
+[package]
+name = "clip-downloader"
+version = "0.0.1"
+edition = "2021"
+
+# https://github.com/rustwasm/wasm-pack/issues/1247
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = "0.0.16"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
