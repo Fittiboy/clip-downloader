@@ -19,7 +19,9 @@ async fn redirect_to_clip(r: Request, e: &Env, c: &Context, cache: Cache) -> Res
         _ => return missing_clip_id(),
     };
     let client = Client::authenticated(e).await?;
-    let clip = client.fetch_clip(clip_id).await?;
+    let Ok(clip) = client.fetch_clip(clip_id).await else {
+        return missing_clip_id();
+    };
     let url = clip.media_url()?;
     let response = Response::redirect(url.clone())?;
     c.wait_until(async move {
