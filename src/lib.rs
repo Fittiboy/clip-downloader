@@ -6,56 +6,109 @@ use worker::{
 
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let clip_id = clip_id(&req);
-    let token = token(&env).await?;
-    let clip = clip(&env, token, clip_id).await?;
+    let clip_id = id_from_path(&req);
+    let client = TwitchClient::authenticated(&env).await?;
+    let clip = client.fetch_clip(clip_id).await?;
     let url = clip.media_url()?;
     Response::redirect(url)
 }
 
-fn clip_id(req: &Request) -> String {
-    let mut path = req.path();
-    path.split_off(1)
+fn id_from_path(req: &Request) -> String {
+    const LEADING_SLASH: usize = 1;
+    req.path().split_off(LEADING_SLASH)
 }
 
-async fn token(env: &Env) -> Result<String> {
-    let client_id = env.secret("TWITCH_CLIENT_ID")?;
-    let client_secret = env.secret("TWITCH_CLIENT_SECRET")?;
-    let mut init = RequestInit::new();
-    let body = format!(
-        "client_id={}&client_secret={}&grant_type=client_credentials",
-        client_id.to_string(),
-        client_secret.to_string(),
-    );
-    let mut headers = Headers::new();
-    headers.set("Content-Type", "application/x-www-form-urlencoded")?;
-    let init = init
-        .with_method(Post)
-        .with_body(Some(body.into()))
-        .with_headers(headers);
-    let auth_request = Request::new_with_init("https://id.twitch.tv/oauth2/token", init)?;
-    let client = Fetch::Request(auth_request);
-    let mut response = client.send().await?;
-    let response: AuthResponse = response.json().await?;
-    Ok(response.access_token)
+#[derive(Debug)]
+struct TwitchClient {
+    client_id: String,
+    access_token: String,
+}
+
+impl TwitchClient {
+    async fn authenticated(env: &Env) -> Result<Self> {
+        let setup = TwitchClientSetup::new(env)?;
+        let mut auth_response = setup.auth_request()?.send().await?;
+        let AuthResponse { access_token } = auth_response.json().await?;
+        Ok(Self {
+            client_id: setup.client_id,
+            access_token,
+        })
+    }
+
+    async fn fetch_clip(&self, id: String) -> Result<Clip> {
+        let url = format!("https://api.twitch.tv/helix/clips?id={}", id);
+        let response = self.fetch_single_clip(url).await?;
+        let Clips { data: [clip] } = response;
+        Ok(clip)
+    }
+
+    async fn fetch_single_clip(&self, url: String) -> Result<Clips> {
+        let mut clips_request = Request::new(&url, Get)?;
+        self.set_auth_headers(&mut clips_request)?;
+        let client = Fetch::Request(clips_request);
+        client.send().await?.json().await
+    }
+
+    fn set_auth_headers(&self, req: &mut Request) -> Result<()> {
+        let headers = req.headers_mut()?;
+        headers.set("Client-Id", &self.client_id)?;
+        headers.set("Authorization", &format!("Bearer {}", self.access_token))?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct TwitchClientSetup {
+    client_id: Id,
+    client_secret: Secret,
+}
+
+type Id = String;
+type Secret = String;
+
+impl TwitchClientSetup {
+    fn new(env: &Env) -> Result<Self> {
+        let client_id = env.secret("TWITCH_CLIENT_ID")?.to_string();
+        let client_secret = env.secret("TWITCH_CLIENT_SECRET")?.to_string();
+        Ok(Self {
+            client_id,
+            client_secret,
+        })
+    }
+
+    fn auth_request(&self) -> Result<Fetch> {
+        let body = self.auth_body();
+        let headers = Self::auth_headers()?;
+        let init = Self::auth_init(body, headers);
+        let auth_request = Request::new_with_init("https://id.twitch.tv/oauth2/token", &init)?;
+        Ok(Fetch::Request(auth_request))
+    }
+
+    fn auth_body(&self) -> String {
+        format!(
+            "client_id={}&client_secret={}&grant_type=client_credentials",
+            self.client_id, self.client_secret,
+        )
+    }
+
+    fn auth_headers() -> Result<Headers> {
+        let mut headers = Headers::new();
+        headers.set("Content-Type", "application/x-www-form-urlencoded")?;
+        Ok(headers)
+    }
+
+    fn auth_init(body: String, headers: Headers) -> RequestInit {
+        let mut init = RequestInit::new();
+        init.with_method(Post)
+            .with_body(Some(body.into()))
+            .with_headers(headers);
+        init
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct AuthResponse {
     access_token: String,
-}
-
-async fn clip(env: &Env, token: String, id: String) -> Result<Clip> {
-    let request_url = format!("https://api.twitch.tv/helix/clips?id={}", id);
-    let mut clips_request = Request::new(&request_url, Get)?;
-    let headers = clips_request.headers_mut()?;
-    let client_id = env.secret("TWITCH_CLIENT_ID")?;
-    headers.set("Client-Id", &client_id.to_string())?;
-    headers.set("Authorization", &format!("Bearer {}", token))?;
-    let client = Fetch::Request(clips_request);
-    let response: Clips = client.send().await?.json().await?;
-    let Clips { data: [clip] } = response;
-    Ok(clip)
 }
 
 #[derive(Debug, Deserialize)]
