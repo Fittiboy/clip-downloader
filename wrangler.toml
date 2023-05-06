@@ -1,6 +1,7 @@
 name = "clip-downloader"
 main = "build/worker/shim.mjs"
 compatibility_date = "2023-03-22"
+usage_model = "bundled"
 
 route = { pattern = "clips.fitti.io", zone_id = "21a34530ef05899904cd180bb54eb3c4" , custom_domain = true }
 
