@@ -133,7 +133,8 @@ impl Clip {
         // thumbnail of the clip. By splitting off the part that starts with "-preview", and
         // replacing it with ".mp4," we get the direct link to the clip's media file.
         let url: &str = &self.thumbnail_url;
-        let url = format!("{}.mp4", url.split_once("-preview").unwrap().0);
+        let url = format!("{}.mp4", url.rsplit_once("-preview")
+            .ok_or(worker::Error::RustError("not a -preview URL".to_string()))?.0);
         Ok(Url::parse(&url)?)
     }
 }
