@@ -13,10 +13,12 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     Response::redirect(url)
 }
 
-fn id_from_path(req: &Request) -> String {
+fn id_from_path(req: &Request) -> ClipId {
     const LEADING_SLASH: usize = 1;
     req.path().split_off(LEADING_SLASH)
 }
+
+type ClipId = String;
 
 #[derive(Debug)]
 struct TwitchClient {
@@ -35,7 +37,7 @@ impl TwitchClient {
         })
     }
 
-    async fn fetch_clip(&self, id: String) -> Result<Clip> {
+    async fn fetch_clip(&self, id: ClipId) -> Result<Clip> {
         let url = format!("https://api.twitch.tv/helix/clips?id={}", id);
         let response = self.fetch_single_clip(url).await?;
         let Clips { data: [clip] } = response;
@@ -59,12 +61,12 @@ impl TwitchClient {
 
 #[derive(Debug)]
 struct TwitchClientSetup {
-    client_id: Id,
-    client_secret: Secret,
+    client_id: ClientId,
+    client_secret: ClientSecret,
 }
 
-type Id = String;
-type Secret = String;
+type ClientId = String;
+type ClientSecret = String;
 
 impl TwitchClientSetup {
     fn new(env: &Env) -> Result<Self> {
@@ -118,8 +120,11 @@ struct Clip {
 
 impl Clip {
     fn media_url(&self) -> Result<Url> {
+        // The Twitch API returns a a clip object that contains not a link to the file, but to the
+        // thumbnail of the clip. By splitting off the part that starts with "-preview", and
+        // replacing it with ".mp4," we get the direct link to the clip's media file.
         let url: &str = &self.thumbnail_url;
-        let url = format!("{}.mp4", url.split_once("-preview").unwrap().0);
+        let url = format!("{}.mp4", url.split_once("-preview ").unwrap().0);
         Ok(Url::parse(&url)?)
     }
 }
