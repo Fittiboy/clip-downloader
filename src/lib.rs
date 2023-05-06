@@ -1,16 +1,25 @@
 use serde::Deserialize;
 use worker::{
-    event, Context, Env, Fetch, Headers, Method::Get, Method::Post, Request, RequestInit, Response,
-    Result, Url,
+    event, Cache, Context, Env, Fetch, Headers, Method::Get, Method::Post, Request, RequestInit,
+    Response, Result, Url,
 };
 
 #[event(fetch)]
-async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let clip_id = id_from_path(&req);
-    let client = TwitchClient::authenticated(&env).await?;
-    let clip = client.fetch_clip(clip_id).await?;
-    let url = clip.media_url()?;
-    Response::redirect(url)
+async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
+    let cache = Cache::default();
+    if let Some(response) = cache.get(&req, false).await? {
+        Ok(response)
+    } else {
+        let clip_id = id_from_path(&req);
+        let client = TwitchClient::authenticated(&env).await?;
+        let clip = client.fetch_clip(clip_id).await?;
+        let url = clip.media_url()?;
+        let response = Response::redirect(url.clone())?;
+        ctx.wait_until(async move {
+            cache.put(&req, response).await.ok();
+        });
+        Response::redirect(url)
+    }
 }
 
 fn id_from_path(req: &Request) -> ClipId {
